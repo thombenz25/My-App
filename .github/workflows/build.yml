@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  GRADLE_OPTS: "-Xmx4096m -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-  _JAVA_OPTIONS: "-Xmx4096m"
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
 
 jobs:
   build:
@@ -88,10 +87,11 @@ jobs:
             if grep -q '"react-native"' package.json || grep -q '"expo"' package.json; then
               echo "==> React Native / Expo Project Detected."
               
-              # លុប CXX Cache និង Native Folders ចាស់ៗដើម្បីកុំឱ្យជាន់ C++ Binaries
-              rm -rf android/.cxx android/app/.cxx node_modules/**/android/.cxx
+              # លុប Folder android ចាស់ចោលទាំងស្រុង ដើម្បីកុំឱ្យជាន់ CMake/Prefab cache ចាស់
+              rm -rf android
               
-              # Run Expo Prebuild ដើម្បីបង្កើត Native Android Code ស្អាតឡើងវិញ
+              echo "Generating fresh Android native code..."
+              npm install expo --legacy-peer-deps || true
               npx expo prebuild --platform android --clean || true
 
               if [ -d "android" ]; then
