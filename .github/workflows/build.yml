@@ -72,7 +72,7 @@ jobs:
           elif [ -f "package.json" ]; then
             echo "==> Node/React Project Detected."
             
-            # ដំឡើង Dependencies តាម Package Manager ដែលត្រូវគ្នា
+            # ដំឡើង Dependencies
             if [ -f "pnpm-lock.yaml" ]; then
               pnpm install --no-frozen-lockfile || npm install --legacy-peer-deps
             elif [ -f "yarn.lock" ]; then
@@ -87,22 +87,25 @@ jobs:
             if grep -q '"react-native"' package.json || grep -q '"expo"' package.json; then
               echo "==> React Native / Expo Project Detected."
               
-              rm -rf android
-              echo "Generating fresh Android native code..."
-              npm install expo --legacy-peer-deps || true
-              npx expo prebuild --platform android --clean || true
+              # លុបតែ C++ Cache ចាស់ចោល (មិនលុប Folder android ទាំងមូលទេ)
+              rm -rf android/.cxx android/app/.cxx || true
+              
+              # បង្កើត Android Native Code តែក្នុងករណីអត់មាន Folder នេះពីមុនមកប៉ុណ្ណោះ
+              if [ ! -d "android" ]; then
+                echo "Generating Android native code..."
+                npm install expo --legacy-peer-deps || true
+                npx expo prebuild --platform android --clean || true
+              fi
 
-              # បន្ថែម Properties ដើម្បីកែកំហុស Unresolved reference: R និង BuildConfig
               if [ -d "android" ]; then
                 echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
                 echo "android.useAndroidX=true" >> android/gradle.properties
                 echo "android.enableJetifier=true" >> android/gradle.properties
-                echo "android.defaults.buildfeatures.buildconfig=true" >> android/gradle.properties
               fi
 
               cd android
               chmod +x gradlew
-              ./gradlew clean  # សម្អាត Cache ចាស់ៗដើម្បីកុំឱ្យ Error ជាន់គ្នា
+              ./gradlew clean
               ./gradlew assembleDebug --no-daemon
 
             # ប្រសិនបើជា React Web / Vite / Vue / Next.js
