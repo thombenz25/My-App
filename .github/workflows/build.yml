@@ -1,54 +1,152 @@
-name: Build Android APK
+name: Universal Multi-Framework Android APK Builder
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      # 1. ស្វែងរក និង Extract ZIP File ដោយស្វ័យប្រវត្តិ
+      - name: Extract ZIP File (if present)
+        run: |
+          if ls *.zip 1> /dev/null 2>&1; then
+            echo "ZIP file detected. Extracting..."
+            unzip -o *.zip -d temp_extract
+            TARGET_FILE=$(find temp_extract \( -name "pubspec.yaml" -o -name "package.json" -o -name "index.html" \) | head -n 1)
+            if [ -n "$TARGET_FILE" ]; then
+              PROJECT_DIR=$(dirname "$TARGET_FILE")
+              cp -r "$PROJECT_DIR"/* .
+              rm -rf temp_extract
+            else
+              cp -r temp_extract/* .
+              rm -rf temp_extract
+            fi
+          fi
+
+      # 2. ដំឡើង Environment ទាំងអស់ (Java 17, Node 20, Flutter, Package Managers)
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: npm
+          node-version: '20'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup Expo & EAS CLI
-        uses: expo/expo-github-action@v8
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          channel: 'stable'
 
-      - name: Build Android APK on EAS (cloud build)
-        run: eas build --platform android --profile preview --non-interactive --wait
-
-      - name: Extract APK download URL
-        id: get_url
+      - name: Enable Corepack & Bun
         run: |
-          URL=$(eas build:list --platform android --limit 1 --status finished --non-interactive --json | node -e "
-            let data='';
-            process.stdin.on('data', c => data += c);
-            process.stdin.on('end', () => {
-              const builds = JSON.parse(data);
-              console.log(builds[0].artifacts.buildUrl);
-            });
-          ")
-          echo "APK_URL=$URL" >> $GITHUB_OUTPUT
+          npm install -g corepack bun || true
+          corepack enable || true
 
-      - name: Download built APK
-        run: curl -L "${{ steps.get_url.outputs.APK_URL }}" -o app-release.apk
+      # 3. ពិនិត្យ និង Build តាមប្រភេទ Project ដោយស្វ័យប្រវត្តិ
+      - name: Auto Detect Project and Build APK
+        run: |
+          echo "=========================================="
+          echo "   Detecting Project Type & Building...   "
+          echo "=========================================="
+          
+          # --- ករណីទី ១៖ FLUTTER PROJECT ---
+          if [ -f "pubspec.yaml" ]; then
+            echo "==> Flutter Project Detected."
+            flutter pub get
+            flutter build apk --debug
 
-      - name: Upload APK as artifact
+          # --- ករណីទី ២៖ NODE / REACT / REACT NATIVE PROJECT ---
+          elif [ -f "package.json" ]; then
+            echo "==> Node/React Project Detected."
+            
+            # ដំឡើង Dependencies តាម Package Manager ដែលត្រូវគ្នា
+            if [ -f "pnpm-lock.yaml" ]; then
+              pnpm install --no-frozen-lockfile || npm install --legacy-peer-deps
+            elif [ -f "yarn.lock" ]; then
+              yarn install || npm install --legacy-peer-deps
+            elif [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+              bun install || npm install --legacy-peer-deps
+            else
+              npm install --legacy-peer-deps
+            fi
+
+            # ប្រសិនបើជា React Native / Expo
+            if grep -q '"react-native"' package.json || grep -q '"expo"' package.json; then
+              echo "==> React Native / Expo Project Detected."
+              if [ ! -d "android" ]; then
+                echo "Generating Android native code..."
+                npm install expo --legacy-peer-deps || true
+                npx expo prebuild --platform android --clean || true
+              fi
+              cd android
+              chmod +x gradlew
+              ./gradlew assembleDebug --no-daemon
+
+            # ប្រសិនបើជា React Web / Vite / Vue / Next.js
+            else
+              echo "==> React/Web Project Detected. Converting Web to APK via Capacitor..."
+              npm install @capacitor/core @capacitor/cli @capacitor/android typescript ts-node --legacy-peer-deps
+              
+              npm run build || npm run generate || true
+              
+              BUILD_DIR="dist"
+              if [ -d "build" ]; then BUILD_DIR="build"; fi
+              if [ -d "out" ]; then BUILD_DIR="out"; fi
+              if [ -d "public" ] && [ ! -d "dist" ] && [ ! -d "build" ]; then BUILD_DIR="public"; fi
+              
+              rm -f capacitor.config.ts capacitor.config.js capacitor.config.json
+              echo "{\"appId\": \"com.myapp.app\", \"appName\": \"My App\", \"webDir\": \"$BUILD_DIR\"}" > capacitor.config.json
+              
+              npx cap add android || true
+              npx cap sync android
+              
+              cd android
+              chmod +x gradlew
+              ./gradlew assembleDebug --no-daemon
+            fi
+
+          # --- ករណីទី ៣៖ HTML/CSS/JS សុទ្ធ (PURE WEB) ---
+          elif [ -f "index.html" ]; then
+            echo "==> Pure HTML/JS Project Detected."
+            npm init -y
+            npm install @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
+            
+            rm -f capacitor.config.ts capacitor.config.js capacitor.config.json
+            echo '{"appId": "com.myapp.app", "appName": "My App", "webDir": "."}' > capacitor.config.json
+            
+            npx cap add android || true
+            npx cap sync android
+            
+            cd android
+            chmod +x gradlew
+            ./gradlew assembleDebug --no-daemon
+
+          else
+            echo "Error: Unknown project structure! Cannot find pubspec.yaml, package.json, or index.html"
+            exit 1
+          fi
+
+      # 4. ប្រមូល File APK ដែលបាន Build រួច
+      - name: Collect Generated APKs
+        run: |
+          mkdir -p output_apks
+          find . -type f -name "*.apk" -not -path "*/temp_extract/*" -exec cp {} output_apks/ \;
+          echo "Found APK files:"
+          ls -lh output_apks/
+
+      # 5. Upload File APK ទុកឱ្យ Download
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: music-player-apk
-          path: app-release.apk
+          name: app-debug
+          path: output_apks/*.apk
