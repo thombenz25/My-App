@@ -57,14 +57,21 @@ jobs:
           npm install -g corepack bun || true
           corepack enable || true
 
-      # បង្កើត Global Gradle Configuration ដើម្បីបង្កើន Memory (4GB) និងបិទ Jetifier
+      # 3. ដំឡើង Android NDK & CMake សម្រាប់ Compile C++ Native Modules (ដូចជា expo-av)
+      - name: Setup Android NDK & CMake
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+
+      # 4. បង្កើត Global Gradle Configuration
       - name: Configure Gradle Memory & Settings
         run: |
           mkdir -p ~/.gradle
           echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> ~/.gradle/gradle.properties
           echo "android.enableJetifier=false" >> ~/.gradle/gradle.properties
+          echo "android.ndkVersion=26.1.10909125" >> ~/.gradle/gradle.properties
 
-      # 3. ពិនិត្យ និង Build តាមប្រភេទ Project ដោយស្វ័យប្រវត្តិ
+      # 5. ពិនិត្យ និង Build តាមប្រភេទ Project ដោយស្វ័យប្រវត្តិ
       - name: Auto Detect Project and Build APK
         run: |
           echo "=========================================="
@@ -81,7 +88,6 @@ jobs:
           elif [ -f "package.json" ]; then
             echo "==> Node/React Project Detected."
             
-            # ដំឡើង Dependencies តាម Package Manager ដែលត្រូវគ្នា
             if [ -f "pnpm-lock.yaml" ]; then
               pnpm install --no-frozen-lockfile || npm install --legacy-peer-deps
             elif [ -f "yarn.lock" ]; then
@@ -102,8 +108,11 @@ jobs:
               fi
 
               if [ -d "android" ]; then
+                echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+                echo "ndk.dir=$ANDROID_HOME/ndk/26.1.10909125" >> android/local.properties
                 echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
                 echo "android.enableJetifier=false" >> android/gradle.properties
+                echo "android.ndkVersion=26.1.10909125" >> android/gradle.properties
               fi
 
               cd android
@@ -129,8 +138,11 @@ jobs:
               npx cap sync android
               
               if [ -d "android" ]; then
+                echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+                echo "ndk.dir=$ANDROID_HOME/ndk/26.1.10909125" >> android/local.properties
                 echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
                 echo "android.enableJetifier=false" >> android/gradle.properties
+                echo "android.ndkVersion=26.1.10909125" >> android/gradle.properties
               fi
 
               cd android
@@ -151,8 +163,11 @@ jobs:
             npx cap sync android
             
             if [ -d "android" ]; then
+              echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+              echo "ndk.dir=$ANDROID_HOME/ndk/26.1.10909125" >> android/local.properties
               echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
               echo "android.enableJetifier=false" >> android/gradle.properties
+              echo "android.ndkVersion=26.1.10909125" >> android/gradle.properties
             fi
 
             cd android
@@ -164,7 +179,7 @@ jobs:
             exit 1
           fi
 
-      # 4. ប្រមូល File APK ដែលបាន Build រួច
+      # 6. ប្រមូល File APK ដែលបាន Build រួច
       - name: Collect Generated APKs
         run: |
           mkdir -p output_apks
@@ -172,7 +187,7 @@ jobs:
           echo "Found APK files:"
           ls -lh output_apks/
 
-      # 5. Upload File APK ទុកឱ្យ Download
+      # 7. Upload File APK ទុកឱ្យ Download
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
