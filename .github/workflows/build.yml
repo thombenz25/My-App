@@ -94,28 +94,46 @@ jobs:
               fi
 
               if [ -d "android" ]; then
-                echo "==> Patching Gradle properties for AGP 8+ Compatibility..."
+                echo "==> Auto-fixing Package Name / Namespace mismatch & BuildConfig..."
                 
-                # 1. បង្ខំកែប្រែ Property នៅក្នុង gradle.properties
-                sed -i 's/buildconfig=false/buildconfig=true/ig' android/gradle.properties || true
-                sed -i 's/nonTransitiveRClass=true/nonTransitiveRClass=false/ig' android/gradle.properties || true
-                echo -e "\nandroid.defaults.buildfeatures.buildconfig=true" >> android/gradle.properties
+                # 1. ស្វែងរកឈ្មោះ Package ពីឯកសារ Kotlin/Java ផ្ទាល់
+                MAIN_ACT=$(find android/app/src/main/java android/app/src/main/kotlin -name "MainActivity.kt" -o -name "MainActivity.java" 2>/dev/null | head -n 1)
+                if [ -n "$MAIN_ACT" ]; then
+                    PKG_NAME=$(grep -E '^package ' "$MAIN_ACT" | awk '{print $2}' | tr -d ';' | tr -d '\r')
+                    echo "--> Detected exact package from code: $PKG_NAME"
+                else
+                    PKG_NAME="com.yourname.musicplayer"
+                    echo "--> Using fallback package: $PKG_NAME"
+                fi
+                
+                # 2. បញ្ចូល Namespace ដែលត្រឹមត្រូវ និង BuildConfig ទៅក្នុង build.gradle (Groovy DSL)
+                APP_GRADLE="android/app/build.gradle"
+                if [ -f "$APP_GRADLE" ]; then
+                    if grep -q "namespace" "$APP_GRADLE"; then
+                        sed -i -E "s/namespace\s+['\"].*['\"]/namespace '$PKG_NAME'/g" "$APP_GRADLE"
+                    else
+                        echo -e "\nandroid { namespace '$PKG_NAME' }" >> "$APP_GRADLE"
+                    fi
+                    echo -e "\nandroid { buildFeatures { buildConfig true } }" >> "$APP_GRADLE"
+                fi
+
+                # 3. បញ្ចូល Namespace សម្រាប់ Kotlin DSL (ប្រសិនបើមានប្រើ)
+                APP_GRADLE_KTS="android/app/build.gradle.kts"
+                if [ -f "$APP_GRADLE_KTS" ]; then
+                    if grep -q "namespace" "$APP_GRADLE_KTS"; then
+                        sed -i -E "s/namespace\s*=\s*[\"'].*[\"']/namespace = \"$PKG_NAME\"/g" "$APP_GRADLE_KTS"
+                    else
+                        echo -e "\nandroid { namespace = \"$PKG_NAME\" }" >> "$APP_GRADLE_KTS"
+                    fi
+                    echo -e "\nandroid { buildFeatures { buildConfig = true } }" >> "$APP_GRADLE_KTS"
+                fi
+                
+                # 4. កំណត់ Global Properties
+                echo "android.defaults.buildfeatures.buildconfig=true" >> android/gradle.properties
                 echo "android.nonTransitiveRClass=false" >> android/gradle.properties
                 echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
                 echo "android.useAndroidX=true" >> android/gradle.properties
                 echo "android.enableJetifier=true" >> android/gradle.properties
-                
-                # 2. បញ្ចូល Namespace និង BuildConfig ទៅក្នុង app/build.gradle ឱ្យចំ Block របស់វា
-                APP_GRADLE="android/app/build.gradle"
-                if [ -f "$APP_GRADLE" ]; then
-                  # ទាញយក Package Name ពី AndroidManifest
-                  PKG_NAME=$(grep -o 'package="[^"]*"' android/app/src/main/AndroidManifest.xml | cut -d'"' -f2 | head -n 1)
-                  if [ -z "$PKG_NAME" ]; then PKG_NAME="com.yourname.musicplayer"; fi
-                  echo "Detected Package Name for Namespace: $PKG_NAME"
-                  
-                  # បញ្ចូលកូដទៅក្នុង Block android {
-                  sed -i 's/^android {/android {\n    namespace "'"$PKG_NAME"'"\n    buildFeatures { buildConfig true }\n/g' "$APP_GRADLE"
-                fi
               fi
 
               cd android
