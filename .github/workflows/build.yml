@@ -1,0 +1,54 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo & EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android APK on EAS (cloud build)
+        run: eas build --platform android --profile preview --non-interactive --wait
+
+      - name: Extract APK download URL
+        id: get_url
+        run: |
+          URL=$(eas build:list --platform android --limit 1 --status finished --non-interactive --json | node -e "
+            let data='';
+            process.stdin.on('data', c => data += c);
+            process.stdin.on('end', () => {
+              const builds = JSON.parse(data);
+              console.log(builds[0].artifacts.buildUrl);
+            });
+          ")
+          echo "APK_URL=$URL" >> $GITHUB_OUTPUT
+
+      - name: Download built APK
+        run: curl -L "${{ steps.get_url.outputs.APK_URL }}" -o app-release.apk
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-player-apk
+          path: app-release.apk
