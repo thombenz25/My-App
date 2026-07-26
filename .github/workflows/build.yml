@@ -98,9 +98,17 @@ jobs:
               fi
 
               if [ -d "android" ]; then
+                # បន្ថែមការកំណត់ដោះស្រាយបញ្ហា R និង BuildConfig
                 echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
                 echo "android.useAndroidX=true" >> android/gradle.properties
                 echo "android.enableJetifier=true" >> android/gradle.properties
+                echo "android.defaults.buildfeatures.buildconfig=true" >> android/gradle.properties
+                echo "android.nonTransitiveRClass=false" >> android/gradle.properties
+                
+                # បង្ខំឱ្យបើក BuildConfig នៅក្នុង app/build.gradle ផ្ទាល់ (ការពារការ Error)
+                if [ -f "android/app/build.gradle" ]; then
+                  echo -e "\nandroid { buildFeatures { buildConfig true } }" >> android/app/build.gradle
+                fi
               fi
 
               cd android
