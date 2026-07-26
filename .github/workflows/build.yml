@@ -62,11 +62,14 @@ jobs:
           echo "   Detecting Project Type & Building...   "
           echo "=========================================="
           
+          # លុប APK ចាស់ៗដែលប្រហែលជាជាប់ក្នុង Source Code ចោលមុននឹង Build
+          find . -name "*.apk" -type f -delete
+          
           # --- ករណីទី ១៖ FLUTTER PROJECT ---
           if [ -f "pubspec.yaml" ]; then
             echo "==> Flutter Project Detected."
             flutter pub get
-            flutter build apk --debug
+            flutter build apk --release
 
           # --- ករណីទី ២៖ NODE / REACT / REACT NATIVE PROJECT ---
           elif [ -f "package.json" ]; then
@@ -140,10 +143,7 @@ jobs:
               chmod +x gradlew
               ./gradlew clean
               
-              # បិទការពិនិត្យ Lint មួយចំនួនដើម្បីការពារកុំឱ្យការ Build Release លោត Error ផ្ដេសផ្ដាស
               echo -e "\nandroid { lintOptions { checkReleaseBuilds false; abortOnError false } }" >> app/build.gradle
-              
-              # ប្តូរពី assembleDebug មកប្រើ assembleRelease វិញ ដើម្បីឱ្យវា Bundle JS ចូលក្នុង APK!
               ./gradlew assembleRelease --no-daemon
 
             else
@@ -172,7 +172,7 @@ jobs:
               cd android
               chmod +x gradlew
               ./gradlew clean
-              ./gradlew assembleDebug --no-daemon
+              ./gradlew assembleRelease --no-daemon
             fi
 
           # --- ករណីទី ៣៖ HTML/CSS/JS សុទ្ធ (PURE WEB) ---
@@ -196,18 +196,19 @@ jobs:
             cd android
             chmod +x gradlew
             ./gradlew clean
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew assembleRelease --no-daemon
 
           else
             echo "Error: Unknown project structure! Cannot find pubspec.yaml, package.json, or index.html"
             exit 1
           fi
 
-      # 4. ប្រមូល File APK ដែលបាន Build រួច
+      # 4. ប្រមូល File APK ដែលបាន Build រួច (ប្រមូលយកតែឯកសារ Release)
       - name: Collect Generated APKs
         run: |
           mkdir -p output_apks
-          find . -type f -name "*.apk" -not -path "*/temp_extract/*" -exec cp {} output_apks/ \;
+          # ស្វែងរកតែ File ដែលមានពាក្យ "release" ដើម្បីការពារការច្រឡំ
+          find . -type f -name "*release*.apk" -not -path "*/temp_extract/*" -exec cp {} output_apks/ \;
           echo "Found APK files:"
           ls -lh output_apks/
 
@@ -215,5 +216,6 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
+          # ប្តូរឈ្មោះ Artifact ឱ្យច្បាស់ដើម្បីស្រួលចំណាំ
+          name: APP-RELEASE-FINAL
           path: output_apks/*.apk
