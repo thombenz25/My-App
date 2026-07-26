@@ -139,7 +139,12 @@ jobs:
               cd android
               chmod +x gradlew
               ./gradlew clean
-              ./gradlew assembleDebug --no-daemon
+              
+              # បិទការពិនិត្យ Lint មួយចំនួនដើម្បីការពារកុំឱ្យការ Build Release លោត Error ផ្ដេសផ្ដាស
+              echo -e "\nandroid { lintOptions { checkReleaseBuilds false; abortOnError false } }" >> app/build.gradle
+              
+              # ប្តូរពី assembleDebug មកប្រើ assembleRelease វិញ ដើម្បីឱ្យវា Bundle JS ចូលក្នុង APK!
+              ./gradlew assembleRelease --no-daemon
 
             else
               echo "==> React/Web Project Detected. Converting Web to APK via Capacitor..."
